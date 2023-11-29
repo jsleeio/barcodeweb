@@ -1,4 +1,4 @@
-module github.com/jsleeio/experiments/barcodeweb
+module github.com/jsleeio/barcodeweb
 
 go 1.21.4
 
