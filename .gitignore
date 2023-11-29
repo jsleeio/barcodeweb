@@ -19,3 +19,14 @@
 
 # Go workspace file
 go.work
+
+# specific to this repository
+## asset download / app build location
+build
+## used by tinygo
+.tinygo-cache
+## used in Makefile
+.built-wrangler-docker
+.downloaded-assets
+## f***ing Javascript
+node_modules

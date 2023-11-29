@@ -1,0 +1,12 @@
+#!/bin/bash
+
+docker run \
+  --rm \
+  --volume="$(pwd):/src" \
+  --workdir=/src \
+  -p 8787:8787 \
+  --env=CLOUDFLARE_EMAIL="$(awk '{ print $1 }' ~/shell-secrets/tokens/cloudflare/email)" \
+  --env=CLOUDFLARE_API_TOKEN="$(awk '{ print $1 }' ~/shell-secrets/tokens/cloudflare/api-key)" \
+  --env=CLOUDFLARE_ACCOUNT_ID="$(awk '{ print $1 }' ~/shell-secrets/tokens/cloudflare/account)" \
+  jsleeio/wrangler "$@"
+
