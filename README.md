@@ -45,9 +45,9 @@ http://localhost:8787/?code=123456&kind=code39
 1. create a worker named `barcodeweb`
 2. create a Cloudflare API key using the worker template
 3. put some Cloudflare configuration data in files in your `$HOME`:
-   a. in `$HOME/shell-secrets/tokens/cloudflare/email`, put your Cloudflare email address
-   b. in `$HOME/shell-secrets/tokens/cloudflare/api-key`, put your Cloudflare API key that you created in step 2
-   c. in `$HOME/shell-secrets/tokens/cloudflare/account`, put your Cloudflare account ID that you want to deploy into
+   - in `$HOME/shell-secrets/tokens/cloudflare/email`, put your Cloudflare email address
+   - in `$HOME/shell-secrets/tokens/cloudflare/api-key`, put your Cloudflare API key that you created in step 2
+   - in `$HOME/shell-secrets/tokens/cloudflare/account`, put your Cloudflare account ID that you want to deploy into
 
 The `run-wrangler` helper can be used for other Cloudflare Workers
 things if you need to use those also.
