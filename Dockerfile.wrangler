@@ -2,7 +2,7 @@ FROM node:lts
 
 WORKDIR /
 
-RUN npm install -g wrangler
+RUN npm install -g wrangler@3.19.0
 
 USER 1000
 

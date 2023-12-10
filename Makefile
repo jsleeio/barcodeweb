@@ -26,7 +26,7 @@ assets: .downloaded-assets
 			.
 
 dev: .built-wrangler-docker .downloaded-assets ./build/app.wasm
-	./run-wrangler dev
+	./run-wrangler dev --ip \*
 
 deploy: .built-wrangler-docker .downloaded-assets ./build/app.wasm
 	./run-wrangler deploy
