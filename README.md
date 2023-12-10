@@ -16,30 +16,52 @@ The `Makefile` should be enough machinery to get you up and running.
 make dev
 ```
 
-Then, assuming that works, try browsing to: http://localhost:8787/?code=1234567890
+Then, assuming that works, try browsing to: http://localhost:8787/c128/1234567890
+## URL structure
 
-## query parameters
+### barcode types
 
-Only two query parameters are currently supported:
-
-* `kind` specifies the barcode type:
-  - `2of5` for non-interleaved 2-of-5 barcodes
+* the first URL path component specifies the render type:
+  - `2of5`  for non-interleaved 2-of-5 barcodes
   - `2of5i` for interleaved 2-of-5 barcodes
   - `aztec` for compact (4 layer) Aztec codes
-  - `code39` for Code 39 barcodes
-  - `code128` for Code 128 barcodes
-  - `qr` for QR codes
-* `code` specifies the content of the barcode, such as `1234567890`
+  - `c39`   for Code 39 barcodes
+  - `c128`  for Code 128 barcodes
+  - `qr`    for QR codes
+* the remainder of the URL path component after the slash specifies the render
+  content
+
+### query parameters
+
+* `width` specifies width in pixels
+* `height` specifies height in pixels
+
+Note that each format has its own default sizing --- generally, 165x50 for
+barcodes and 200x200 for QR/Aztec.
+
+Sizes smaller than 50x50 will be rejected.
+
+### examples
 
 eg.
 
-http://localhost:8787/?kind=qr&code=https://github.com/jsleeio/barcodeweb/
+* `http://localhost:8787/qr/https://github.com/jsleeio/barcodeweb/`
+  (this is broken, as you'll see if you try it; see caveats section at
+  the end of this file)
 
-http://localhost:8787/?code=123456
+* `http://localhost:8787/qr/hello-world`
 
-http://localhost:8787/?code=123456&kind=code128 (equivalent to the above)
+* `http://localhost:8787/qr/hello-world?width=400&height=400`
 
-http://localhost:8787/?code=123456&kind=code39
+* `http://localhost:8787/aztec/https://github.com/jsleeio/barcodeweb/`
+  (this is broken, as you'll see if you try it; see caveats section at
+  the end of this file)
+
+* `http://localhost:8787/aztec/hello-world`
+
+* `http://localhost:8787/c128/123456&height=100`
+
+* `http://localhost:8787/c39/123456&width=200&height=100`
 
 ## deploying to Cloudflare Workers
 
