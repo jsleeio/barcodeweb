@@ -33,4 +33,4 @@ deploy: .built-wrangler-docker .downloaded-assets ./build/app.wasm
 
 clean:
 	rm -rf build .tinygo-cache .built-wrangler-docker .downloaded-assets .wrangler
-	docker rmi jsleeio/wrangler:latest
+	docker rmi -f jsleeio/wrangler:latest
