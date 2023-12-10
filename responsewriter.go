@@ -14,12 +14,12 @@ type responseWriter struct {
 	Body       []byte
 }
 
-func (rw *responseWriter) WriteHeader(statusCode int) {
+func (rw responseWriter) WriteHeader(statusCode int) {
 	rw.StatusCode = statusCode
 	rw.ResponseWriter.WriteHeader(statusCode)
 }
 
-func (rw *responseWriter) Write(data []byte) (int, error) {
+func (rw responseWriter) Write(data []byte) (int, error) {
 	rw.Body = append(rw.Body, data...)
 	return rw.ResponseWriter.Write(data)
 }
