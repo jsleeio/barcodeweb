@@ -7,16 +7,33 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 
 	"github.com/syumai/workers"
 	"github.com/syumai/workers/cloudflare"
 	"github.com/syumai/workers/cloudflare/cache"
 
 	"github.com/boombuler/barcode"
+	"github.com/boombuler/barcode/aztec"
 	"github.com/boombuler/barcode/code128"
 	"github.com/boombuler/barcode/code39"
 	"github.com/boombuler/barcode/qr"
+	"github.com/boombuler/barcode/twooffive"
 )
+
+func render2of5(content string) (barcode.Barcode, error) {
+	return twooffive.Encode(content, false)
+}
+
+func render2of5interleaved(content string) (barcode.Barcode, error) {
+	return twooffive.Encode(content, true)
+}
+
+func renderAztec(content string) (barcode.Barcode, error) {
+	return aztec.Encode([]byte(content), 23, 4)
+}
 
 func renderCode39(content string) (barcode.Barcode, error) {
 	return code39.Encode(content, true, false)
@@ -32,66 +49,55 @@ func renderQR(content string) (barcode.Barcode, error) {
 
 type renderFunc func(content string) (barcode.Barcode, error)
 
-// render actually renders the barcode. Easier to handle errors with this in a
-// separate function, and the handler was getting too long.
-func render(renderers map[string]renderFunc, kind, code string) (b barcode.Barcode, status int, err error) {
-	status = http.StatusBadRequest
-	renderer, ok := renderers[kind]
-	if !ok {
-		err = fmt.Errorf("invalid barcode type %q; valid types are: code39 code128 qr", kind)
-		return
-	}
-	if code == "" {
-		err = fmt.Errorf("must supply a 'code' query parameter")
-		return
-	}
-	b, err = renderer(code)
-	if err != nil {
-		status = http.StatusInternalServerError
-		err = fmt.Errorf("error rendering %q barcode with value %q: %v", kind, code, err)
-	}
-	status = http.StatusOK
-	return
+// ignorecasefirstpath is an http middleware that translates only the first
+// "word" of a path to lowercase. For example:
+//
+// /FOO/BAR     => /foo/BAR
+// /foo/BAR        (unchanged)
+// /FOO/BAR/BAZ => /foo/BAR/BAZ
+func ignorecasefirstpath(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		pathbits := strings.Split(r.URL.Path, "/")
+		// FIXME: This breaks handling of qr/aztec codes with URLs in them.
+		//        The // in https:// gets replaced with /
+		//        This seems to be a known thing...
+		//        https://github.com/golang/go/issues/21955
+		if len(pathbits) > 1 {
+			oldpath := r.URL.Path
+			r.URL.Path = strings.Replace(r.URL.Path, "/"+pathbits[1], "/"+strings.ToLower(pathbits[1]), 1)
+			log.Printf("ignorecasefirstpath: %q => %q", oldpath, r.URL.Path)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
-func handlerfunc(renderers map[string]renderFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// logger is an http middleware that just logs requests
+func logger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("request: %s => %s %s", r.RemoteAddr, r.Method, r.URL.String())
+		next.ServeHTTP(w, r)
+	})
+}
+
+func caching(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		rw := responseWriter{ResponseWriter: w}
 		c := cache.New()
-		res, err := c.Match(r, nil)
-		if err != nil {
-			log.Printf("error retrieving from cache: %v", err)
-		} else {
-			if res != nil {
-				// cache HIT
-				rw.WriteHeader(res.StatusCode)
-				for key, values := range res.Header {
-					for _, value := range values {
-						rw.Header().Add(key, value)
-					}
+		if res, _ := c.Match(r, nil); res != nil {
+			// cache HIT
+			for key, values := range res.Header {
+				for _, value := range values {
+					rw.Header().Add(key, value)
 				}
-				rw.Header().Add("x-message", "cache from worker")
-				io.Copy(rw.ResponseWriter, res.Body)
-				return
 			}
+			rw.WriteHeader(res.StatusCode)
+			io.Copy(rw.ResponseWriter, res.Body)
+			next.ServeHTTP(rw, r)
+			return
 		}
 		// cache MISS
-		kind := r.URL.Query().Get("kind")
-		code := r.URL.Query().Get("code")
-		if kind == "" {
-			kind = "code128"
-		}
-		bc, status, err := render(renderers, kind, code)
-		rw.Header().Set("cache-control", "public, max-age=604800")
-		if err != nil {
-			log.Printf("render error: %v", err)
-		} else {
-			bc, _ = barcode.Scale(bc, 200, 200)
-			rw.Header().Set("content-type", "image/png")
-			png.Encode(w, bc)
-		}
-		rw.WriteHeader(status)
+		next.ServeHTTP(rw, r)
 		// populate Cloudflare cache. Errors are cacheable too because the result
 		// for a given set of inputs will never change
 		cloudflare.WaitUntil(ctx, func() {
@@ -100,15 +106,77 @@ func handlerfunc(renderers map[string]renderFunc) http.HandlerFunc {
 				log.Printf("Cloudflare cache put: %v", err)
 			}
 		})
+	})
+}
+
+func finalSize(u *url.URL, defwidth, defheight int) (width, height int, err error) {
+	optwidth := u.Query().Get("width")
+	optheight := u.Query().Get("height")
+	width = defwidth
+	height = defheight
+	if optwidth != "" {
+		if width, err = strconv.Atoi(optwidth); err != nil {
+			return
+		}
 	}
+	if optheight != "" {
+		if height, err = strconv.Atoi(optheight); err != nil {
+			return
+		}
+	}
+	if width < 50 || height < 50 {
+		err = fmt.Errorf("%dx%d is an improbable size. nope", width, height)
+	}
+	return
+}
+
+type barcodeServeMux struct {
+	http.ServeMux
+}
+
+func newbarcodeServeMux() *barcodeServeMux {
+	return &barcodeServeMux{}
+}
+
+func (b *barcodeServeMux) register(name string, width, height int, renderer renderFunc) {
+	prefix := "/" + name + "/"
+	b.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
+		// same inputs = same outputs, including errors
+		w.Header().Set("cache-control", "public, max-age=604800")
+		code := strings.TrimPrefix(r.URL.EscapedPath(), prefix)
+		finalwidth, finalheight, err := finalSize(r.URL, width, height)
+		if err != nil {
+			log.Printf("size error: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, "invalid size")
+			return
+		}
+		bc, err := renderer(code)
+		if err != nil {
+			log.Printf("render error: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "render error")
+			return
+		}
+		bc, err = barcode.Scale(bc, finalwidth, finalheight)
+		if err != nil {
+			log.Printf("scale error: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprintf(w, "scale error")
+			return
+		}
+		w.Header().Set("content-type", "image/png")
+		png.Encode(w, bc)
+	})
 }
 
 func main() {
-	renderers := map[string]renderFunc{
-		"code39":  renderCode39,
-		"code128": renderCode128,
-		"qr":      renderQR,
-	}
-	handler := handlerfunc(renderers)
-	workers.Serve(handler)
+	mux := newbarcodeServeMux()
+	mux.register("qr", 200, 200, renderQR)
+	mux.register("c128", 165, 50, renderCode128)
+	mux.register("c39", 165, 50, renderCode39)
+	mux.register("aztec", 200, 200, renderAztec)
+	mux.register("2of5", 165, 50, render2of5)
+	mux.register("2of5i", 165, 50, render2of5interleaved)
+	workers.Serve(caching(ignorecasefirstpath(mux)))
 }

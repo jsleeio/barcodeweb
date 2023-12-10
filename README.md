@@ -23,8 +23,11 @@ Then, assuming that works, try browsing to: http://localhost:8787/?code=12345678
 Only two query parameters are currently supported:
 
 * `kind` specifies the barcode type:
+  - `2of5` for non-interleaved 2-of-5 barcodes
+  - `2of5i` for interleaved 2-of-5 barcodes
+  - `aztec` for compact (4 layer) Aztec codes
   - `code39` for Code 39 barcodes
-  - `code128` for Code 128 barcodes (this is the default)
+  - `code128` for Code 128 barcodes
   - `qr` for QR codes
 * `code` specifies the content of the barcode, such as `1234567890`
 
@@ -59,3 +62,19 @@ make deploy
 ```
 
 That should be that!
+
+## caveats
+
+### handling of URLs with URLs in them
+
+The Go `net/http` package tidies up request URLS, including coalescing
+consecutive slashes, which makes generating QR and Aztec images
+containing URLs impossible without moving the QR/Aztec content to a query
+parameter.
+
+Specifically, URLs like `https://localhost:8787/qr/https://my.website/` will
+generate a 301 redirect to `https://localhost:8787/qr/https:/my.website/` ---
+the `//` has been replaced with `/`.
+
+I currently don't see a way around this, as it even appears to do it when the
+`//` is URL-encoded. More info here: https://github.com/golang/go/issues/21955
