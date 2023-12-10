@@ -30,3 +30,6 @@ build
 .downloaded-assets
 ## f***ing Javascript
 node_modules
+
+# wrangler droppings
+.wrangler
